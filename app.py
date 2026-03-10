@@ -370,14 +370,13 @@ if "results" in st.session_state:
 
     # --- Vista previa ---
     import streamlit.components.v1 as components
-    import re as _re
 
     st.write("")
+    has_dot = "dot_source" in results or "dot_source_simple" in results
     has_svg = "svg" in results or "svg_simple" in results
-    has_svg_error = "svg_error" in results or "svg_simple_error" in results
     preview_tabs = st.tabs(
         [":material/table_chart: Tabla"] +
-        ([":material/account_tree: Grafo variante"] if (has_svg or has_svg_error) else [])
+        ([":material/account_tree: Grafo variante"] if has_dot else [])
     )
 
     with preview_tabs[0]:
@@ -398,57 +397,55 @@ if "results" in st.session_state:
         else:
             st.info("Activa el formato HTML en las opciones para ver la tabla aquí.")
 
-    if has_svg or has_svg_error:
+    if has_dot:
         with preview_tabs[1]:
-
-            def _render_svg(svg_bytes, zoom: float):
-                PT_TO_PX = 1.3333
-                raw = svg_bytes.decode("utf-8", errors="replace")
-                s = raw.find("<svg"); e = raw.rfind("</svg>") + len("</svg>")
-                frag = raw[s:e] if s != -1 else raw
-                h_px = float((_re.search(r'height="([\d.]+)pt"', frag) or [None, "165"])[1]) * PT_TO_PX
-                w_px = float((_re.search(r'width="([\d.]+)pt"', frag) or [None, "1000"])[1]) * PT_TO_PX
-                frag = _re.sub(r'width="[\d.]+pt"', f'width="{w_px:.1f}"', frag)
-                frag = _re.sub(r'height="[\d.]+pt"', f'height="{h_px:.1f}"', frag)
-                base_scale = 280 / h_px
-                scale = base_scale * zoom
-                container_h = int(h_px * scale) + 10
-                return frag, scale, container_h
-
-            # Selector si hay los dos formatos
-            both = "svg" in results and "svg_simple" in results
-            if both:
-                svg_choice = st.radio(
+            # Selector si hay los dos tipos
+            both_dot = "dot_source" in results and "dot_source_simple" in results
+            if both_dot:
+                dot_choice = st.radio(
                     "Tipo de grafo",
-                    options=["svg", "svg_simple"],
-                    format_func=lambda k: {"svg": "Detallado", "svg_simple": "Simplificado"}[k],
+                    options=["dot_source", "dot_source_simple"],
+                    format_func=lambda k: {"dot_source": "Detallado", "dot_source_simple": "Simplificado"}[k],
                     horizontal=True,
                     label_visibility="collapsed",
                 )
             else:
-                svg_choice = "svg" if "svg" in results else "svg_simple"
+                dot_choice = "dot_source" if "dot_source" in results else "dot_source_simple"
 
-            if not has_svg:
-                err = results.get("svg_error") or results.get("svg_simple_error", "")
-                st.warning(f"No se pudo generar el grafo: `{err}`\n\nAsegúrate de que Graphviz está instalado en el servidor.")
-                svg_choice = None
+            zoom = st.slider("Zoom", min_value=0.5, max_value=4.0, value=1.0, step=0.25)
 
-            zoom = st.slider("Zoom", min_value=0.5, max_value=4.0, value=1.0, step=0.25) if has_svg else None
+            dot_src = results[dot_choice]
+            # Escapar el DOT source para embedding seguro en JS template literal
+            dot_escaped = dot_src.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
 
-            if svg_choice:
-                frag, scale, container_h = _render_svg(results[svg_choice], zoom)
-                st.caption("Vista parcial del grafo (inicio del texto). Descarga el SVG para ver el grafo completo.")
-                components.html(f"""
-                    <div style="width:100%;height:{container_h + 20}px;overflow-x:auto;overflow-y:hidden;
-                        border:1px solid #dee2e6;border-radius:6px;background:#fff;">
-                      <div style="transform:scale({scale:.3f});transform-origin:top left;
-                          display:inline-block;line-height:0;">
-                        {frag}
-                      </div>
-                    </div>""",
-                    height=container_h + 40,
-                    scrolling=False,
-                )
+            st.caption("Grafo renderizado en el navegador. Descarga el SVG para ver el grafo completo.")
+            components.html(f"""<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/viz.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/full.render.js"></script>
+  <style>
+    body {{ margin: 0; background: #fff; }}
+    #graph {{ transform-origin: top left; transform: scale({zoom:.3f}); display: inline-block; }}
+    #error {{ color: #c00; font-family: monospace; padding: 1em; }}
+  </style>
+</head><body>
+  <div id="error"></div>
+  <div id="graph"></div>
+  <script>
+    var viz = new Viz();
+    viz.renderString(`{dot_escaped}`)
+      .then(function(svg) {{
+        document.getElementById("graph").innerHTML = svg;
+      }})
+      .catch(function(err) {{
+        document.getElementById("error").textContent = "Error al renderizar el grafo: " + err;
+      }});
+  </script>
+</body></html>""",
+                height=520,
+                scrolling=True,
+            )
 
 # ---------------------------------------------------------------------------
 # Footer

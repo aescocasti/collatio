@@ -252,12 +252,8 @@ def fix_combining_chars(rows: list) -> list:
 # Serialización de filas a formatos
 # ---------------------------------------------------------------------------
 
-def build_svg_bytes(graph, mode: str = "svg") -> bytes:
-    """
-    Genera el grafo variante como SVG (bytes) usando graphviz.
-    mode: "svg" (nodos detallados con lecturas por testimonio)
-          "svg_simple" (solo etiquetas de token)
-    """
+def _build_digraph(graph, mode: str = "svg"):
+    """Construye el objeto graphviz.Digraph y devuelve (digraph, dot_source_str)."""
     import re
     import graphviz
     from collections import defaultdict
@@ -306,7 +302,11 @@ def build_svg_bytes(graph, mode: str = "svg") -> bytes:
             sub.node(n)
         a.subgraph(sub)
 
-    # Buscar dot en múltiples ubicaciones posibles
+    return a, a.source
+
+
+def _render_svg_subprocess(dot_source: str) -> bytes:
+    """Llama al ejecutable 'dot' para convertir DOT source a SVG bytes. Puede lanzar excepción."""
     import subprocess
     import shutil
     import os as _os
@@ -326,7 +326,7 @@ def build_svg_bytes(graph, mode: str = "svg") -> bytes:
         )
     result = subprocess.run(
         [dot_path, "-Tsvg"],
-        input=a.source.encode("utf-8"),
+        input=dot_source.encode("utf-8"),
         capture_output=True,
     )
     if result.returncode != 0:
@@ -508,8 +508,15 @@ def run_collation(
     if svg_formats:
         graph = collate(collation, output="graph", **collate_kwargs)
         for fmt in svg_formats:
+            dot_key = "dot_source" if fmt == "svg" else "dot_source_simple"
             try:
-                results[fmt] = build_svg_bytes(graph, mode=fmt)
+                _, dot_src = _build_digraph(graph, mode=fmt)
+                results[dot_key] = dot_src
+                # Intentar también generar SVG bytes para descarga (requiere 'dot' instalado)
+                try:
+                    results[fmt] = _render_svg_subprocess(dot_src)
+                except Exception as e:
+                    results[fmt + "_error"] = str(e)
             except Exception as e:
                 results[fmt + "_error"] = str(e)
         # Reconstruir la colación para los demás formatos (collate() es no-destructivo)
