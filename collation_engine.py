@@ -306,7 +306,22 @@ def build_svg_bytes(graph, mode: str = "svg") -> bytes:
             sub.node(n)
         a.subgraph(sub)
 
-    return a.pipe(format="svg")
+    # Llamar a dot directamente para evitar problemas de PATH en entornos cloud
+    import subprocess
+    import shutil
+    dot_path = (
+        shutil.which("dot")
+        or "/usr/bin/dot"
+        or "/usr/local/bin/dot"
+    )
+    result = subprocess.run(
+        [dot_path, "-Tsvg"],
+        input=a.source.encode("utf-8"),
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.decode("utf-8", errors="replace"))
+    return result.stdout
 
 
 def rows_to_csv_bytes(rows: list, delimiter: str = ";") -> bytes:
