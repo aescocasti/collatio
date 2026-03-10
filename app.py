@@ -381,15 +381,8 @@ if "results" in st.session_state:
 
     with preview_tabs[0]:
         if "html" in results:
-            html_content = results["html"].decode("utf-8")
-            start = html_content.find("<table")
-            end   = html_content.find("</table>") + len("</table>")
-            table_fragment = html_content[start:end] if start != -1 else html_content
-            st.html(f"""
-            <div style="overflow-x:auto;overflow-y:auto;max-height:420px;
-                border:1px solid #dee2e6;border-radius:6px;padding:0.5rem;background:#fff;">
-                {table_fragment}
-            </div>""")
+            # Pasar el HTML completo (con estilos) a components.html para que la tabla tenga formato
+            components.html(results["html"].decode("utf-8"), height=420, scrolling=True)
         elif rows:
             buf = io.StringIO()
             csv.writer(buf, delimiter="\t").writerows(rows)
@@ -412,34 +405,44 @@ if "results" in st.session_state:
             else:
                 dot_choice = "dot_source" if "dot_source" in results else "dot_source_simple"
 
-            zoom = st.slider("Zoom", min_value=0.5, max_value=4.0, value=1.0, step=0.25)
+            zoom = st.slider("Zoom", min_value=0.25, max_value=2.0, value=0.5, step=0.25)
 
             dot_src = results[dot_choice]
-            # Escapar el DOT source para embedding seguro en JS template literal
             dot_escaped = dot_src.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
 
-            st.caption("Grafo renderizado en el navegador. Descarga el SVG para ver el grafo completo.")
+            st.caption("Grafo renderizado en el navegador. Descarga el SVG para el grafo completo.")
             components.html(f"""<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8">
   <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/viz.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/full.render.js"></script>
   <style>
-    body {{ margin: 0; background: #fff; }}
-    #graph {{ transform-origin: top left; transform: scale({zoom:.3f}); display: inline-block; }}
+    body {{ margin: 0; padding: 4px; background: #fff; overflow: auto; }}
     #error {{ color: #c00; font-family: monospace; padding: 1em; }}
   </style>
 </head><body>
   <div id="error"></div>
   <div id="graph"></div>
   <script>
+    var zoom = {zoom:.3f};
     var viz = new Viz();
     viz.renderString(`{dot_escaped}`)
       .then(function(svg) {{
-        document.getElementById("graph").innerHTML = svg;
+        var div = document.getElementById("graph");
+        div.innerHTML = svg;
+        var svgEl = div.querySelector("svg");
+        if (svgEl) {{
+          // Leer dimensiones originales en pt y aplicar zoom
+          var wStr = svgEl.getAttribute("width") || "";
+          var hStr = svgEl.getAttribute("height") || "";
+          var wPt = parseFloat(wStr) || 800;
+          var hPt = parseFloat(hStr) || 400;
+          svgEl.setAttribute("width",  (wPt * zoom).toFixed(1) + "pt");
+          svgEl.setAttribute("height", (hPt * zoom).toFixed(1) + "pt");
+        }}
       }})
       .catch(function(err) {{
-        document.getElementById("error").textContent = "Error al renderizar el grafo: " + err;
+        document.getElementById("error").textContent = "Error: " + err;
       }});
   </script>
 </body></html>""",
