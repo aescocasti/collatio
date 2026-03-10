@@ -278,10 +278,39 @@ def _hash(witnesses, opts):
     return h.hexdigest()
 
 
+def _estimate_tokens(witnesses_dict):
+    """Estimación rápida del número de tokens: palabras tras eliminar etiquetas XML."""
+    import re as _re
+    total = 0
+    for content in witnesses_dict.values():
+        text = content.decode("utf-8", errors="replace")
+        text = _re.sub(r'<[^>]+>', ' ', text)
+        total += len(text.split())
+    return total
+
+_TOKEN_WARN  = 2000   # aviso pero permite ejecutar
+_TOKEN_LIMIT = 4000   # bloquea la ejecución
+
 if run_button and n_witnesses >= 2:
     witnesses = witnesses_from_zip if witnesses_from_zip else {
         f.name.rsplit(".", 1)[0]: f.read() for f in uploaded_files
     }
+
+    _tok = _estimate_tokens(witnesses)
+    _size_ok = True
+    if _tok > _TOKEN_LIMIT:
+        st.error(
+            f"El texto es demasiado grande para CollateX ({_tok:,} tokens estimados). "
+            f"El límite seguro es {_TOKEN_LIMIT:,} tokens. "
+            "Divide el texto en secciones más pequeñas antes de colar."
+        )
+        _size_ok = False
+    elif _tok > _TOKEN_WARN:
+        st.warning(
+            f"Texto largo ({_tok:,} tokens estimados). La colación puede ser lenta "
+            "o consumir mucha memoria. Considera dividir el texto en secciones."
+        )
+
     opts = dict(
         formats=sorted(selected_formats),
         layout=layout,
@@ -295,7 +324,7 @@ if run_button and n_witnesses >= 2:
     )
     current_hash = _hash(witnesses, opts)
 
-    if st.session_state.get("result_hash") != current_hash:
+    if _size_ok and st.session_state.get("result_hash") != current_hash:
         with st.spinner("Procesando…"):
             try:
                 results, rows = run_collation(witnesses, **opts)
@@ -342,6 +371,8 @@ if "results" in st.session_state:
         "tei":        ("application/xml",           f"colacion_{lbl}.tei.xml"),
         "svg":        ("image/svg+xml",             f"colacion_{lbl}_grafo.svg"),
         "svg_simple": ("image/svg+xml",             f"colacion_{lbl}_grafo_simple.svg"),
+        "dot":        ("text/vnd.graphviz",         f"colacion_{lbl}_grafo.gv"),
+        "dot_simple": ("text/vnd.graphviz",         f"colacion_{lbl}_grafo_simple.gv"),
     }
     LABELS = {
         "csv":        "📄 CSV",
@@ -352,9 +383,11 @@ if "results" in st.session_state:
         "tei":        "📝 TEI",
         "svg":        "🔀 SVG (grafo)",
         "svg_simple": "🔀 SVG (simple)",
+        "dot":        "📐 DOT (grafo)",
+        "dot_simple": "📐 DOT (simple)",
     }
 
-    fmt_keys = [k for k in ("html", "tei", "csv", "tsv", "json", "xml", "svg", "svg_simple") if k in results]
+    fmt_keys = [k for k in ("html", "tei", "csv", "tsv", "json", "xml", "svg", "svg_simple", "dot", "dot_simple") if k in results]
     cols = st.columns(len(fmt_keys))
     for i, fmt in enumerate(fmt_keys):
         mime, filename = MIME[fmt]
@@ -365,6 +398,17 @@ if "results" in st.session_state:
             mime=mime,
             use_container_width=True,
         )
+
+    # Aviso si el SVG generado es de un grafo muy grande
+    _svg_dot = results.get("dot_source") or results.get("dot_source_simple")
+    if _svg_dot and (any(f in results for f in ("svg", "svg_simple"))):
+        import re as _re2
+        _svg_nodes = len(_re2.findall(r'^\s+\d+\s+\[label=', _svg_dot, _re2.MULTILINE))
+        if _svg_nodes > 600:
+            st.caption(
+                f"⚠️ El SVG descargado contiene {_svg_nodes} nodos. "
+                "Usa un visor externo (Inkscape, navegador) para abrirlo."
+            )
 
     # --- Vista previa ---
     import streamlit.components.v1 as components
@@ -405,38 +449,58 @@ if "results" in st.session_state:
 
             zoom = st.slider("Zoom", min_value=0.25, max_value=2.0, value=0.5, step=0.25)
 
-            svg_key = "svg" if dot_choice == "dot_source" else "svg_simple"
-            svg_bytes = results.get(svg_key)
+            dot_src = results[dot_choice]
 
-            if svg_bytes:
-                svg_str = svg_bytes.decode("utf-8")
-                st.caption("Grafo renderizado en el servidor. Descarga el SVG para el grafo completo.")
+            import re as _re
+            _node_count = len(_re.findall(r'^\s+\d+\s+\[label=', dot_src, _re.MULTILINE))
+
+            _PREVIEW_WARN = 200
+            _PREVIEW_MAX  = 600
+
+            if _node_count > _PREVIEW_MAX:
+                st.info(
+                    f"El grafo tiene **{_node_count} nodos** — demasiado grande para renderizar "
+                    "en el navegador. Descarga el SVG o el archivo DOT (.gv) para visualizarlo "
+                    "localmente con Graphviz, Inkscape u OmniGraffle."
+                )
+            else:
+                if _node_count > _PREVIEW_WARN:
+                    st.warning(
+                        f"El grafo tiene {_node_count} nodos. El renderizado puede ser lento."
+                    )
+
+                dot_escaped = dot_src.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+                st.caption("Grafo renderizado en el navegador. Descarga el SVG para el grafo completo.")
                 components.html(f"""<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8">
+  <script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3/lib/viz-standalone.js"></script>
   <style>
     body {{ margin: 0; padding: 4px; background: #fff; overflow: auto; }}
+    #error {{ color: #c00; font-family: monospace; padding: 1em; }}
   </style>
 </head><body>
-  <div id="graph">{svg_str}</div>
+  <div id="error"></div>
+  <div id="graph"></div>
   <script>
     var zoom = {zoom:.3f};
-    var svgEl = document.querySelector("svg");
-    if (svgEl) {{
-      var wPt = parseFloat(svgEl.getAttribute("width")) || 800;
-      var hPt = parseFloat(svgEl.getAttribute("height")) || 400;
-      svgEl.setAttribute("width",  (wPt * zoom).toFixed(1) + "pt");
-      svgEl.setAttribute("height", (hPt * zoom).toFixed(1) + "pt");
-    }}
+    Viz.load().then(function(viz) {{
+      var svgEl = viz.renderSVGElement(`{dot_escaped}`);
+      if (svgEl) {{
+        var wPt = parseFloat(svgEl.getAttribute("width")) || 800;
+        var hPt = parseFloat(svgEl.getAttribute("height")) || 400;
+        svgEl.setAttribute("width",  (wPt * zoom).toFixed(1) + "pt");
+        svgEl.setAttribute("height", (hPt * zoom).toFixed(1) + "pt");
+        document.getElementById("graph").appendChild(svgEl);
+      }}
+    }}).catch(function(err) {{
+      document.getElementById("error").textContent = "Error: " + err;
+    }});
   </script>
 </body></html>""",
                     height=520,
                     scrolling=True,
                 )
-            else:
-                err = results.get(svg_key + "_error", "SVG no disponible")
-                st.warning(f"No se pudo renderizar el grafo: {err}")
-                st.code(results[dot_choice], language=None)
 
 # ---------------------------------------------------------------------------
 # Footer

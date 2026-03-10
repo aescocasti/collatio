@@ -32,6 +32,8 @@ OUTPUT_FORMATS = {
     "tei":        "TEI (segmentación paralela)",
     "svg":        "SVG — grafo variante (detallado)",
     "svg_simple": "SVG — grafo variante (simplificado)",
+    "dot":        "DOT — grafo variante detallado (.gv)",
+    "dot_simple": "DOT — grafo variante simplificado (.gv)",
 }
 
 LAYOUT_OPTIONS = {
@@ -479,22 +481,35 @@ def run_collation(
 
     results = {}
 
-    # Formatos SVG (requieren el grafo variante)
-    svg_formats = [f for f in formats if f in ("svg", "svg_simple")]
-    if svg_formats:
+    # Formatos de grafo variante (SVG y/o DOT)
+    graph_formats = [f for f in formats if f in ("svg", "svg_simple", "dot", "dot_simple")]
+    if graph_formats:
         graph = collate(collation, output="graph", **collate_kwargs)
-        for fmt in svg_formats:
-            dot_key = "dot_source" if fmt == "svg" else "dot_source_simple"
-            try:
-                _, dot_src = _build_digraph(graph, mode=fmt)
-                results[dot_key] = dot_src
-                # Intentar también generar SVG bytes para descarga (requiere 'dot' instalado)
+        # Construir los dos digraphs (detallado y simplificado) solo si son necesarios
+        _digraphs = {}
+        for fmt in graph_formats:
+            mode = "svg_simple" if fmt in ("svg_simple", "dot_simple") else "svg"
+            if mode not in _digraphs:
+                try:
+                    _, dot_src = _build_digraph(graph, mode=mode)
+                    _digraphs[mode] = dot_src
+                except Exception as e:
+                    _digraphs[mode] = None
+            dot_src = _digraphs[mode]
+            if dot_src is None:
+                continue
+            # Clave interna para el preview
+            dot_key = "dot_source" if mode == "svg" else "dot_source_simple"
+            results[dot_key] = dot_src
+            # DOT como descarga directa (siempre disponible)
+            if fmt in ("dot", "dot_simple"):
+                results[fmt] = dot_src.encode("utf-8")
+            # SVG vía subprocess (requiere 'dot' instalado)
+            if fmt in ("svg", "svg_simple"):
                 try:
                     results[fmt] = _render_svg_subprocess(dot_src)
                 except Exception as e:
                     results[fmt + "_error"] = str(e)
-            except Exception as e:
-                results[fmt + "_error"] = str(e)
         # Reconstruir la colación para los demás formatos (collate() es no-destructivo)
         collation = build_collation(witnesses, strip_punct=strip_punct)
 
