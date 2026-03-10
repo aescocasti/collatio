@@ -6,4 +6,3 @@ graphviz>=0.20
 prettytable>=3.0
 networkx>=3.0
 jsonschema>=4.0
-ClusterShell>=1.9

@@ -6,7 +6,7 @@ Created on Aug 5, 2014
 from collatex.extended_suffix_array import Occurrence, BlockWitness, Block,\
     PartialOverlapException
 from operator import attrgetter
-from ClusterShell.RangeSet import RangeSet
+from collatex.rangeset import RangeSet
 from queue import PriorityQueue
 # TODO: different in Python 2?
 # optionally load the Levenshtein dependency for near match functionality.

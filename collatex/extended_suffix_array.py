@@ -3,7 +3,7 @@ Created on Apr 7, 2014
 
 @author: Ronald Haentjens Dekker
 '''
-from ClusterShell.RangeSet import RangeSet
+from collatex.rangeset import RangeSet
 
 
 class PartialOverlapException(Exception):

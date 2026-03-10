@@ -1,4 +1,4 @@
-from ClusterShell.RangeSet import RangeSet
+from collatex.rangeset import RangeSet
 from collatex.block import Block
 from collatex.core_classes import Token
 from collatex.linsuffarr import SuffixArray
