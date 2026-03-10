@@ -446,6 +446,6 @@ st.write("")
 st.markdown(
     '<p class="footer">Collatio · '
     '<a href="https://collatex.net/" target="_blank">CollateX</a> · '
-    'Procesamiento local · Sin almacenamiento de datos</p>',
+    'Los archivos se procesan en memoria y no se almacenan</p>',
     unsafe_allow_html=True,
 )
