@@ -227,12 +227,12 @@ with st.expander("⚙️  Opciones avanzadas", expanded=False):
 
     st.write("")
     st.markdown("**Formatos de salida**")
-    st.caption("Por defecto se generan Excel, HTML y TEI. Puedes añadir o quitar.")
+    st.caption("Por defecto se generan HTML y TEI. Puedes añadir o quitar.")
 
     selected_formats = st.multiselect(
         "Formatos",
         options=list(OUTPUT_FORMATS.keys()),
-        default=["xlsx", "html", "tei"],
+        default=["html", "tei"],
         format_func=lambda k: OUTPUT_FORMATS[k],
         label_visibility="collapsed",
     )
@@ -246,7 +246,7 @@ with st.expander("⚙️  Opciones avanzadas", expanded=False):
 if "algorithm" not in dir():
     algorithm = "edit_graph"
 if "selected_formats" not in dir():
-    selected_formats = ["xlsx", "html", "tei"]
+    selected_formats = ["html", "tei"]
 
 st.write("")
 
@@ -336,7 +336,6 @@ if "results" in st.session_state:
     MIME = {
         "csv":        ("text/csv",                 f"colacion_{lbl}.csv"),
         "tsv":        ("text/tab-separated-values", f"colacion_{lbl}.tsv"),
-        "xlsx":       ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"colacion_{lbl}.xlsx"),
         "html":       ("text/html",                 f"colacion_{lbl}.html"),
         "json":       ("application/json",          f"colacion_{lbl}.json"),
         "xml":        ("application/xml",           f"colacion_{lbl}.xml"),
@@ -347,7 +346,6 @@ if "results" in st.session_state:
     LABELS = {
         "csv":        "📄 CSV",
         "tsv":        "📄 TSV",
-        "xlsx":       "📊 Excel",
         "html":       "🌐 HTML",
         "json":       "🔣 JSON",
         "xml":        "📝 XML",
@@ -356,7 +354,7 @@ if "results" in st.session_state:
         "svg_simple": "🔀 SVG (simple)",
     }
 
-    fmt_keys = [k for k in ("xlsx", "html", "tei", "csv", "tsv", "json", "xml", "svg", "svg_simple") if k in results]
+    fmt_keys = [k for k in ("html", "tei", "csv", "tsv", "json", "xml", "svg", "svg_simple") if k in results]
     cols = st.columns(len(fmt_keys))
     for i, fmt in enumerate(fmt_keys):
         mime, filename = MIME[fmt]
@@ -407,48 +405,38 @@ if "results" in st.session_state:
 
             zoom = st.slider("Zoom", min_value=0.25, max_value=2.0, value=0.5, step=0.25)
 
-            dot_src = results[dot_choice]
-            dot_escaped = dot_src.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+            svg_key = "svg" if dot_choice == "dot_source" else "svg_simple"
+            svg_bytes = results.get(svg_key)
 
-            st.caption("Grafo renderizado en el navegador. Descarga el SVG para el grafo completo.")
-            components.html(f"""<!DOCTYPE html>
+            if svg_bytes:
+                svg_str = svg_bytes.decode("utf-8")
+                st.caption("Grafo renderizado en el servidor. Descarga el SVG para el grafo completo.")
+                components.html(f"""<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8">
-  <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/viz.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/full.render.js"></script>
   <style>
     body {{ margin: 0; padding: 4px; background: #fff; overflow: auto; }}
-    #error {{ color: #c00; font-family: monospace; padding: 1em; }}
   </style>
 </head><body>
-  <div id="error"></div>
-  <div id="graph"></div>
+  <div id="graph">{svg_str}</div>
   <script>
     var zoom = {zoom:.3f};
-    var viz = new Viz();
-    viz.renderString(`{dot_escaped}`)
-      .then(function(svg) {{
-        var div = document.getElementById("graph");
-        div.innerHTML = svg;
-        var svgEl = div.querySelector("svg");
-        if (svgEl) {{
-          // Leer dimensiones originales en pt y aplicar zoom
-          var wStr = svgEl.getAttribute("width") || "";
-          var hStr = svgEl.getAttribute("height") || "";
-          var wPt = parseFloat(wStr) || 800;
-          var hPt = parseFloat(hStr) || 400;
-          svgEl.setAttribute("width",  (wPt * zoom).toFixed(1) + "pt");
-          svgEl.setAttribute("height", (hPt * zoom).toFixed(1) + "pt");
-        }}
-      }})
-      .catch(function(err) {{
-        document.getElementById("error").textContent = "Error: " + err;
-      }});
+    var svgEl = document.querySelector("svg");
+    if (svgEl) {{
+      var wPt = parseFloat(svgEl.getAttribute("width")) || 800;
+      var hPt = parseFloat(svgEl.getAttribute("height")) || 400;
+      svgEl.setAttribute("width",  (wPt * zoom).toFixed(1) + "pt");
+      svgEl.setAttribute("height", (hPt * zoom).toFixed(1) + "pt");
+    }}
   </script>
 </body></html>""",
-                height=520,
-                scrolling=True,
-            )
+                    height=520,
+                    scrolling=True,
+                )
+            else:
+                err = results.get(svg_key + "_error", "SVG no disponible")
+                st.warning(f"No se pudo renderizar el grafo: {err}")
+                st.code(results[dot_choice], language=None)
 
 # ---------------------------------------------------------------------------
 # Footer

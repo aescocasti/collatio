@@ -26,7 +26,6 @@ PUNCT_KEEP = {"\u204A"}  # tironiano ⁊
 OUTPUT_FORMATS = {
     "csv":        "CSV (punto y coma)",
     "tsv":        "TSV (tabulador)",
-    "xlsx":       "Excel (.xlsx)",
     "html":       "HTML (tabla)",
     "json":       "JSON",
     "xml":        "XML (pseudo-TEI)",
@@ -340,29 +339,6 @@ def rows_to_csv_bytes(rows: list, delimiter: str = ";") -> bytes:
     return buf.getvalue().encode("utf-8-sig")
 
 
-def rows_to_xlsx_bytes(rows: list) -> bytes:
-    import pandas as pd
-
-    if len(rows) > 1:
-        # Desduplicar nombres de columna para que pandas no falle
-        headers = rows[0]
-        seen = {}
-        unique_headers = []
-        for h in headers:
-            if h in seen:
-                seen[h] += 1
-                unique_headers.append(f"{h}_{seen[h]}")
-            else:
-                seen[h] = 0
-                unique_headers.append(h)
-        df = pd.DataFrame(rows[1:], columns=unique_headers)
-    else:
-        df = pd.DataFrame(rows)
-
-    buf = io.BytesIO()
-    df.to_excel(buf, index=False)
-    return buf.getvalue()
-
 
 def rows_to_html_bytes(rows: list, title: str = "") -> bytes:
     """Genera tabla HTML estilizada desde las filas de la colación."""
@@ -486,7 +462,7 @@ def run_collation(
         )
 
     if formats is None:
-        formats = ["csv", "tsv", "xlsx", "html"]
+        formats = ["csv", "tsv", "html"]
 
     collation = build_collation(witnesses, strip_punct=strip_punct)
 
@@ -540,7 +516,7 @@ def run_collation(
             results[fmt] = text.encode("utf-8")
 
     # Formatos basados en filas (CSV, TSV, XLSX, HTML)
-    row_formats = [f for f in formats if f in ("csv", "tsv", "xlsx", "html")]
+    row_formats = [f for f in formats if f in ("csv", "tsv", "html")]
     if row_formats:
         csv_text = collate(collation, output="csv", **collate_kwargs)
         rows = list(csv.reader(io.StringIO(csv_text)))
@@ -550,8 +526,6 @@ def run_collation(
             results["csv"] = rows_to_csv_bytes(rows, delimiter=";")
         if "tsv" in row_formats:
             results["tsv"] = rows_to_csv_bytes(rows, delimiter="\t")
-        if "xlsx" in row_formats:
-            results["xlsx"] = rows_to_xlsx_bytes(rows)
         if "html" in row_formats:
             results["html"] = rows_to_html_bytes(rows, title=label)
 
