@@ -41,6 +41,24 @@ class RangeSet:
         groups.append(current)
         return [_ContiguousRange(g) for g in groups]
 
+    def __and__(self, other):
+        """Support & operator (intersection)."""
+        return self.intersection(other)
+
+    def __iter__(self):
+        """Iterate over all integers in sorted order."""
+        return iter(sorted(self._set))
+
+    def __getitem__(self, idx):
+        """Support indexing (e.g. rangeset[0])."""
+        return sorted(self._set)[idx]
+
+    def __contains__(self, item):
+        return item in self._set
+
+    def __len__(self):
+        return len(self._set)
+
     def __bool__(self):
         return bool(self._set)
 
