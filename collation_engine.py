@@ -485,8 +485,8 @@ def run_collation(
         for fmt in svg_formats:
             try:
                 results[fmt] = build_svg_bytes(graph, mode=fmt)
-            except Exception:
-                pass  # graphviz 'dot' no disponible; se omite el SVG
+            except Exception as e:
+                results[fmt + "_error"] = str(e)
         # Reconstruir la colación para los demás formatos (collate() es no-destructivo)
         collation = build_collation(witnesses, strip_punct=strip_punct)
 

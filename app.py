@@ -374,9 +374,10 @@ if "results" in st.session_state:
 
     st.write("")
     has_svg = "svg" in results or "svg_simple" in results
+    has_svg_error = "svg_error" in results or "svg_simple_error" in results
     preview_tabs = st.tabs(
         [":material/table_chart: Tabla"] +
-        ([":material/account_tree: Grafo variante"] if has_svg else [])
+        ([":material/account_tree: Grafo variante"] if (has_svg or has_svg_error) else [])
     )
 
     with preview_tabs[0]:
@@ -397,7 +398,7 @@ if "results" in st.session_state:
         else:
             st.info("Activa el formato HTML en las opciones para ver la tabla aquí.")
 
-    if has_svg:
+    if has_svg or has_svg_error:
         with preview_tabs[1]:
 
             def _render_svg(svg_bytes, zoom: float):
@@ -427,22 +428,27 @@ if "results" in st.session_state:
             else:
                 svg_choice = "svg" if "svg" in results else "svg_simple"
 
-            zoom = st.slider("Zoom", min_value=0.5, max_value=4.0, value=1.0, step=0.25)
+            if not has_svg:
+                err = results.get("svg_error") or results.get("svg_simple_error", "")
+                st.warning(f"No se pudo generar el grafo: `{err}`\n\nAsegúrate de que Graphviz está instalado en el servidor.")
+                svg_choice = None
 
-            frag, scale, container_h = _render_svg(results[svg_choice], zoom)
+            zoom = st.slider("Zoom", min_value=0.5, max_value=4.0, value=1.0, step=0.25) if has_svg else None
 
-            st.caption("Vista parcial del grafo (inicio del texto). Descarga el SVG para ver el grafo completo.")
-            components.html(f"""
-                <div style="width:100%;height:{container_h + 20}px;overflow-x:auto;overflow-y:hidden;
-                    border:1px solid #dee2e6;border-radius:6px;background:#fff;">
-                  <div style="transform:scale({scale:.3f});transform-origin:top left;
-                      display:inline-block;line-height:0;">
-                    {frag}
-                  </div>
-                </div>""",
-                height=container_h + 40,
-                scrolling=False,
-            )
+            if svg_choice:
+                frag, scale, container_h = _render_svg(results[svg_choice], zoom)
+                st.caption("Vista parcial del grafo (inicio del texto). Descarga el SVG para ver el grafo completo.")
+                components.html(f"""
+                    <div style="width:100%;height:{container_h + 20}px;overflow-x:auto;overflow-y:hidden;
+                        border:1px solid #dee2e6;border-radius:6px;background:#fff;">
+                      <div style="transform:scale({scale:.3f});transform-origin:top left;
+                          display:inline-block;line-height:0;">
+                        {frag}
+                      </div>
+                    </div>""",
+                    height=container_h + 40,
+                    scrolling=False,
+                )
 
 # ---------------------------------------------------------------------------
 # Footer
