@@ -483,7 +483,10 @@ def run_collation(
     if svg_formats:
         graph = collate(collation, output="graph", **collate_kwargs)
         for fmt in svg_formats:
-            results[fmt] = build_svg_bytes(graph, mode=fmt)
+            try:
+                results[fmt] = build_svg_bytes(graph, mode=fmt)
+            except Exception:
+                pass  # graphviz 'dot' no disponible; se omite el SVG
         # Reconstruir la colación para los demás formatos (collate() es no-destructivo)
         collation = build_collation(witnesses, strip_punct=strip_punct)
 

@@ -8,8 +8,14 @@ import hashlib
 import io
 import csv
 import json
+import os
 import zipfile
 import streamlit as st
+
+# Asegurar que graphviz 'dot' esté en el PATH (necesario en algunos entornos cloud)
+for _gv_path in ("/usr/bin", "/usr/local/bin"):
+    if _gv_path not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = _gv_path + ":" + os.environ.get("PATH", "")
 from collatex.exceptions import SegmentationError
 
 from collation_engine import run_collation, OUTPUT_FORMATS, extract_witnesses_from_zip
