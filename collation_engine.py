@@ -306,14 +306,24 @@ def build_svg_bytes(graph, mode: str = "svg") -> bytes:
             sub.node(n)
         a.subgraph(sub)
 
-    # Llamar a dot directamente para evitar problemas de PATH en entornos cloud
+    # Buscar dot en múltiples ubicaciones posibles
     import subprocess
     import shutil
-    dot_path = (
-        shutil.which("dot")
-        or "/usr/bin/dot"
-        or "/usr/local/bin/dot"
-    )
+    import os as _os
+
+    _candidates = [
+        shutil.which("dot"),
+        shutil.which("dot", path="/usr/bin:/usr/local/bin:/opt/homebrew/bin:/opt/local/bin"),
+    ] + [
+        _os.path.join(d, "dot")
+        for d in ("/usr/bin", "/usr/local/bin", "/opt/homebrew/bin", "/opt/local/bin")
+    ]
+    dot_path = next((p for p in _candidates if p and _os.path.isfile(p)), None)
+    if not dot_path:
+        raise FileNotFoundError(
+            "No se encontró el ejecutable 'dot' de Graphviz. "
+            "Rutas buscadas: /usr/bin, /usr/local/bin"
+        )
     result = subprocess.run(
         [dot_path, "-Tsvg"],
         input=a.source.encode("utf-8"),
