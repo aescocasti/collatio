@@ -349,10 +349,16 @@ if "results" in st.session_state:
 
     st.divider()
 
-    st.markdown(
-        f"**Colación completada** · {len(names)} testimonios · "
-        + "  ".join(f"`{n}`" for n in names)
-    )
+    col_title, col_btn = st.columns([5, 1])
+    with col_title:
+        st.markdown(
+            f"**Colación completada** · {len(names)} testimonios · "
+            + "  ".join(f"`{n}`" for n in names)
+        )
+    with col_btn:
+        if st.button("↺ Nueva", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
 
     st.write("")
 
