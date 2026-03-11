@@ -116,6 +116,9 @@ input_mode = st.radio(
 
 witnesses_from_zip = {}
 
+# La clave del uploader cambia al resetear, forzando su reinicio
+_uploader_key = st.session_state.get("uploader_key", 0)
+
 if input_mode == "Archivos individuales":
     uploaded_files = st.file_uploader(
         "Sube los archivos de texto de cada testimonio",
@@ -123,6 +126,7 @@ if input_mode == "Archivos individuales":
         accept_multiple_files=True,
         help="Archivos .txt (texto plano) o .xml (PAGE XML de eScriptorium / Transkribus). "
              "El nombre del archivo se usará como sigla.",
+        key=f"uploader_files_{_uploader_key}",
     )
     if uploaded_files:
         names_str = "  ·  ".join(f"`{f.name.rsplit('.',1)[0]}`" for f in uploaded_files)
@@ -136,6 +140,7 @@ else:
         "Sube el ZIP con subcarpetas por testimonio",
         type=["zip"],
         help="Estructura esperada: ZIP → una carpeta por testimonio → archivos PAGE XML (.xml) por hoja.",
+        key=f"uploader_zip_{_uploader_key}",
     )
     if zip_file:
         try:
@@ -357,7 +362,9 @@ if "results" in st.session_state:
         )
     with col_btn:
         if st.button("↺ Nueva", use_container_width=True):
+            new_key = st.session_state.get("uploader_key", 0) + 1
             st.session_state.clear()
+            st.session_state["uploader_key"] = new_key
             st.rerun()
 
     st.write("")
