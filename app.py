@@ -18,7 +18,7 @@ for _gv_path in ("/usr/bin", "/usr/local/bin"):
         os.environ["PATH"] = _gv_path + ":" + os.environ.get("PATH", "")
 from collatex.exceptions import SegmentationError
 
-from collation_engine import run_collation, OUTPUT_FORMATS, extract_witnesses_from_zip
+from collation_engine import run_collation, OUTPUT_FORMATS, extract_witnesses_from_zip, _build_preview_graph
 
 # ---------------------------------------------------------------------------
 # Configuración de la página
@@ -167,7 +167,7 @@ st.markdown('<p class="step-label">Paso 2 · Título de la collatio</p>', unsafe
 label = st.text_input(
     "Título de la collatio",
     value="",
-    placeholder="p. ej.  2.1.27   o   Partidas_III_cap4",
+    placeholder="p. ej.  2.1.27   o   libro_I",
     label_visibility="collapsed",
 )
 
@@ -232,7 +232,7 @@ with st.expander("⚙️  Opciones avanzadas", expanded=False):
     selected_formats = st.multiselect(
         "Formatos",
         options=list(OUTPUT_FORMATS.keys()),
-        default=["html", "tei"],
+        default=["csv"],
         format_func=lambda k: OUTPUT_FORMATS[k],
         label_visibility="collapsed",
     )
@@ -246,7 +246,7 @@ with st.expander("⚙️  Opciones avanzadas", expanded=False):
 if "algorithm" not in dir():
     algorithm = "edit_graph"
 if "selected_formats" not in dir():
-    selected_formats = ["html", "tei"]
+    selected_formats = ["csv"]
 
 st.write("")
 
@@ -278,37 +278,28 @@ def _hash(witnesses, opts):
     return h.hexdigest()
 
 
-def _estimate_tokens(witnesses_dict):
-    """Estimación rápida del número de tokens: palabras tras eliminar etiquetas XML."""
+def _max_tokens_per_witness(witnesses_dict):
+    """Tokens del testimonio más largo (words tras eliminar etiquetas XML)."""
     import re as _re
-    total = 0
+    max_tok = 0
     for content in witnesses_dict.values():
         text = content.decode("utf-8", errors="replace")
         text = _re.sub(r'<[^>]+>', ' ', text)
-        total += len(text.split())
-    return total
+        max_tok = max(max_tok, len(text.split()))
+    return max_tok
 
-_TOKEN_WARN  = 2000   # aviso pero permite ejecutar
-_TOKEN_LIMIT = 4000   # bloquea la ejecución
+_TOKENS_PER_WITNESS_WARN = 1500  # aviso; CollateX puede manejarlo pero será lento
 
 if run_button and n_witnesses >= 2:
     witnesses = witnesses_from_zip if witnesses_from_zip else {
         f.name.rsplit(".", 1)[0]: f.read() for f in uploaded_files
     }
 
-    _tok = _estimate_tokens(witnesses)
-    _size_ok = True
-    if _tok > _TOKEN_LIMIT:
-        st.error(
-            f"El texto es demasiado grande para CollateX ({_tok:,} tokens estimados). "
-            f"El límite seguro es {_TOKEN_LIMIT:,} tokens. "
-            "Divide el texto en secciones más pequeñas antes de colar."
-        )
-        _size_ok = False
-    elif _tok > _TOKEN_WARN:
+    _max_tok = _max_tokens_per_witness(witnesses)
+    if _max_tok > _TOKENS_PER_WITNESS_WARN:
         st.warning(
-            f"Texto largo ({_tok:,} tokens estimados). La colación puede ser lenta "
-            "o consumir mucha memoria. Considera dividir el texto en secciones."
+            f"El testimonio más largo tiene ~{_max_tok:,} tokens. "
+            "La colación puede ser lenta. Considera dividir el texto en secciones."
         )
 
     opts = dict(
@@ -324,7 +315,7 @@ if run_button and n_witnesses >= 2:
     )
     current_hash = _hash(witnesses, opts)
 
-    if _size_ok and st.session_state.get("result_hash") != current_hash:
+    if st.session_state.get("result_hash") != current_hash:
         with st.spinner("Procesando…"):
             try:
                 results, rows = run_collation(witnesses, **opts)
@@ -334,6 +325,8 @@ if run_button and n_witnesses >= 2:
                     "result_hash": current_hash,
                     "result_label": label or "colacion",
                     "witness_names": list(witnesses.keys()),
+                    "witnesses": witnesses,
+                    "strip_punct": strip_punct,
                 })
             except SegmentationError as e:
                 st.error(str(e))
@@ -347,10 +340,12 @@ if run_button and n_witnesses >= 2:
 # ---------------------------------------------------------------------------
 
 if "results" in st.session_state:
-    results  = st.session_state["results"]
-    rows     = st.session_state.get("rows")
-    lbl      = st.session_state["result_label"]
-    names    = st.session_state["witness_names"]
+    results     = st.session_state["results"]
+    rows        = st.session_state.get("rows")
+    lbl         = st.session_state["result_label"]
+    names       = st.session_state["witness_names"]
+    _witnesses  = st.session_state.get("witnesses", {})
+    _strip_punct = st.session_state.get("strip_punct", True)
 
     st.divider()
 
@@ -426,11 +421,24 @@ if "results" in st.session_state:
             # Pasar el HTML completo (con estilos) a components.html para que la tabla tenga formato
             components.html(results["html"].decode("utf-8"), height=420, scrolling=True)
         elif rows:
-            buf = io.StringIO()
-            csv.writer(buf, delimiter="\t").writerows(rows)
-            st.text(buf.getvalue()[:6000])
+            # st.dataframe() no admite columnas duplicadas (frecuentes en colación);
+            # construimos la tabla como HTML simple.
+            def _rows_to_html(rows):
+                esc = lambda s: str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                hdr = "".join(f"<th>{esc(c)}</th>" for c in rows[0])
+                body = "".join(
+                    "<tr>" + "".join(f"<td>{esc(c)}</td>" for c in row) + "</tr>"
+                    for row in rows[1:]
+                )
+                return (
+                    "<style>table{border-collapse:collapse;font-family:Georgia,serif;font-size:0.82rem}"
+                    "th,td{border:1px solid #ccc;padding:4px 8px;white-space:nowrap}"
+                    "th{background:#2c3e50;color:#fff}</style>"
+                    f"<table><thead><tr>{hdr}</tr></thead><tbody>{body}</tbody></table>"
+                )
+            components.html(_rows_to_html(rows), height=420, scrolling=True)
         else:
-            st.info("Activa el formato HTML en las opciones para ver la tabla aquí.")
+            st.info("No hay datos de tabla disponibles.")
 
     if has_dot:
         with preview_tabs[1]:
@@ -453,24 +461,33 @@ if "results" in st.session_state:
 
             import re as _re
             _node_count = len(_re.findall(r'^\s+\d+\s+\[label=', dot_src, _re.MULTILINE))
-
-            _PREVIEW_WARN = 200
-            _PREVIEW_MAX  = 600
+            _PREVIEW_MAX = 600
 
             if _node_count > _PREVIEW_MAX:
-                st.info(
-                    f"El grafo tiene **{_node_count} nodos** — demasiado grande para renderizar "
-                    "en el navegador. Descarga el SVG o el archivo DOT (.gv) para visualizarlo "
-                    "localmente con Graphviz, Inkscape u OmniGraffle."
+                _preview_dot = _build_preview_graph(
+                    _witnesses,
+                    max_tokens=50,
+                    strip_punct=_strip_punct,
                 )
-            else:
-                if _node_count > _PREVIEW_WARN:
-                    st.warning(
-                        f"El grafo tiene {_node_count} nodos. El renderizado puede ser lento."
+                if _preview_dot:
+                    _render_dot = _preview_dot
+                    st.caption(
+                        f"⚠️ Previsualización parcial — primeros 50 tokens "
+                        f"({_node_count} nodos en el grafo completo). "
+                        "Descarga el SVG o DOT para ver el grafo completo."
                     )
-
-                dot_escaped = dot_src.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+                else:
+                    _render_dot = None
+                    st.info(
+                        f"El grafo tiene {_node_count} nodos. "
+                        "Descarga el SVG o DOT para visualizarlo localmente."
+                    )
+            else:
+                _render_dot = dot_src
                 st.caption("Grafo renderizado en el navegador. Descarga el SVG para el grafo completo.")
+
+            if _render_dot:
+                _dot_escaped = _render_dot.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
                 components.html(f"""<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8">
@@ -484,8 +501,8 @@ if "results" in st.session_state:
   <div id="graph"></div>
   <script>
     var zoom = {zoom:.3f};
-    Viz.load().then(function(viz) {{
-      var svgEl = viz.renderSVGElement(`{dot_escaped}`);
+    Viz.instance().then(function(viz) {{
+      var svgEl = viz.renderSVGElement(`{_dot_escaped}`);
       if (svgEl) {{
         var wPt = parseFloat(svgEl.getAttribute("width")) || 800;
         var hPt = parseFloat(svgEl.getAttribute("height")) || 400;

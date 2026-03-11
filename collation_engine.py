@@ -420,6 +420,41 @@ def build_collation(witnesses: dict, strip_punct: bool = True) -> Collation:
 
 
 # ---------------------------------------------------------------------------
+# Preview parcial del grafo
+# ---------------------------------------------------------------------------
+
+def _build_preview_graph(witnesses: dict, max_tokens: int = 50, strip_punct: bool = True) -> str:
+    """
+    Genera un dot_source de una mini-colación con los primeros max_tokens tokens
+    de cada testimonio. Exclusivamente para previsualización.
+    Devuelve el dot_source (str) o None si falla.
+    """
+    try:
+        mini_collation = Collation()
+        for name, content in witnesses.items():
+            safe_name = name.strip().replace(" ", "_") or "witness"
+            if isinstance(content, bytes) and is_page_xml(content):
+                text = extract_text_from_page_xml(content)
+            elif isinstance(content, bytes):
+                text = decode_bytes(content)
+            else:
+                text = str(content)
+            if strip_punct:
+                text = clean_text(text)
+            else:
+                text = nfc(text)
+            # Truncar a los primeros max_tokens tokens
+            tokens = text.split()
+            text = " ".join(tokens[:max_tokens])
+            mini_collation.add_plain_witness(safe_name, text)
+        mini_graph = collate(mini_collation, output="graph", segmentation=True)
+        _, dot_src = _build_digraph(mini_graph, mode="svg_simple")
+        return dot_src
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Función principal
 # ---------------------------------------------------------------------------
 
@@ -504,12 +539,20 @@ def run_collation(
             # DOT como descarga directa (siempre disponible)
             if fmt in ("dot", "dot_simple"):
                 results[fmt] = dot_src.encode("utf-8")
-            # SVG vía subprocess (requiere 'dot' instalado)
+            # SVG vía subprocess (requiere 'dot' instalado y grafo de tamaño manejable)
             if fmt in ("svg", "svg_simple"):
-                try:
-                    results[fmt] = _render_svg_subprocess(dot_src)
-                except Exception as e:
-                    results[fmt + "_error"] = str(e)
+                import re as _re_svg
+                _n_nodes = len(_re_svg.findall(r'^\s+\d+\s+\[label=', dot_src, _re_svg.MULTILINE))
+                if _n_nodes > 600:
+                    results[fmt + "_error"] = (
+                        f"Grafo demasiado grande ({_n_nodes} nodos) para generar SVG automáticamente. "
+                        "Usa el archivo DOT descargable para renderizarlo localmente."
+                    )
+                else:
+                    try:
+                        results[fmt] = _render_svg_subprocess(dot_src)
+                    except Exception as e:
+                        results[fmt + "_error"] = str(e)
         # Reconstruir la colación para los demás formatos (collate() es no-destructivo)
         collation = build_collation(witnesses, strip_punct=strip_punct)
 
