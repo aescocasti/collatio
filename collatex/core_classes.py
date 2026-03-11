@@ -9,7 +9,7 @@ Tokenizer, Witness, VariantGraph, CollationAlgorithm
 """
 import json
 import networkx as nx
-from _collections import deque
+from collections import deque
 from networkx.algorithms.dag import topological_sort
 import re
 from prettytable import PrettyTable
