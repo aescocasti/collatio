@@ -21,7 +21,7 @@ from collatex.exceptions import SegmentationError
 # Constantes
 # ---------------------------------------------------------------------------
 
-PUNCT_KEEP = {"\u204A"}  # tironiano ⁊
+PUNCT_KEEP = {"\u204A", "&"}  # tironiano ⁊ y & como sustituto gráfico del tironiano
 
 OUTPUT_FORMATS = {
     "csv":        "CSV (punto y coma)",
@@ -74,7 +74,20 @@ def clean_text(raw: str) -> str:
 
 
 def decode_bytes(raw_bytes: bytes) -> str:
-    return raw_bytes.decode("utf-8", errors="replace")
+    """Decodifica bytes intentando UTF-8-sig, UTF-8 y latin-1 como último recurso.
+    Elimina caracteres de control que romperían la tokenización de CollateX."""
+    for enc in ("utf-8-sig", "utf-8", "mac_roman", "latin-1"):
+        try:
+            text = raw_bytes.decode(enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    else:
+        text = raw_bytes.decode("latin-1", errors="replace")
+    # Eliminar caracteres de control (categoría Cc) excepto tabulador y salto de línea
+    import re as _re
+    text = _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
+    return text
 
 
 def dehyphenate(text: str) -> str:
@@ -280,7 +293,7 @@ def _build_digraph(graph, mode: str = "svg"):
             reverse_dict = defaultdict(list)
             for sigil, tokens in n.tokens.items():
                 reading = "".join(
-                    re.sub(r">", "&gt;", re.sub(r"<", "&lt;", t.token_data["t"]))
+                    re.sub(r">", "&gt;", re.sub(r"<", "&lt;", re.sub(r"&", "&amp;", t.token_data["t"])))
                     for t in tokens
                 )
                 reverse_dict[reading].append(sigil)
@@ -396,6 +409,18 @@ def rows_to_html_bytes(rows: list, title: str = "") -> bytes:
 # ---------------------------------------------------------------------------
 # Construcción de la colación
 # ---------------------------------------------------------------------------
+
+def check_encoding_issues(witnesses: dict) -> list:
+    """Devuelve lista de nombres de testimonios con bytes inválidos en UTF-8."""
+    problematic = []
+    for name, content in witnesses.items():
+        if isinstance(content, bytes):
+            try:
+                content.decode("utf-8")
+            except UnicodeDecodeError:
+                problematic.append(name)
+    return problematic
+
 
 def build_collation(witnesses: dict, strip_punct: bool = True) -> Collation:
     """

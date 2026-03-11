@@ -18,7 +18,7 @@ for _gv_path in ("/usr/bin", "/usr/local/bin"):
         os.environ["PATH"] = _gv_path + ":" + os.environ.get("PATH", "")
 from collatex.exceptions import SegmentationError
 
-from collation_engine import run_collation, OUTPUT_FORMATS, extract_witnesses_from_zip, _build_preview_graph
+from collation_engine import run_collation, OUTPUT_FORMATS, extract_witnesses_from_zip, _build_preview_graph, check_encoding_issues
 
 # ---------------------------------------------------------------------------
 # Configuración de la página
@@ -299,6 +299,15 @@ if run_button and n_witnesses >= 2:
     witnesses = witnesses_from_zip if witnesses_from_zip else {
         f.name.rsplit(".", 1)[0]: f.read() for f in uploaded_files
     }
+
+    _enc_issues = check_encoding_issues(witnesses)
+    if _enc_issues:
+        st.warning(
+            f"⚠️ Los siguientes testimonios tienen bytes inválidos en UTF-8 y se decodificarán "
+            f"con latin-1: **{', '.join(_enc_issues)}**. "
+            "El texto puede contener caracteres inesperados. "
+            "Considera revisar la codificación del archivo."
+        )
 
     _max_tok = _max_tokens_per_witness(witnesses)
     if _max_tok > _TOKENS_PER_WITNESS_WARN:
